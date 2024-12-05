@@ -5,7 +5,7 @@ output/
 # notebook saves
 .ipynb_checkpoints/
 
-# latex 
+# latex
 *.aux
 *.log
 *.out
@@ -15,3 +15,6 @@ output/
 # R stuff
 .Rdata
 .Rhistory
+
+# osx
+.DS_Store

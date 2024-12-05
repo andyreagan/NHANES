@@ -10,6 +10,7 @@ but it reduces the complexity by an order of magnitude.
 import click
 import numpy as np
 import pandas as pd
+
 from util import CHAR_LOOKUP, flatten_columns
 
 
