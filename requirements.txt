@@ -1,0 +1,23 @@
+pandas==1.5.3
+pandas-stubs==1.2.0.61
+numpy==1.23.5
+numba==0.56.4
+altair==4.2.2
+altair-data-server==0.4.1
+altair-saver==0.5.0
+tqdm==4.64.1
+click==8.1.2
+statsmodels==0.13.5
+pyarrow==11.0.0
+python-dotenv==0.21.1
+# these all need to match the version in .pre-commit-config.yaml
+black==23.1.0
+mypy==0.961
+isort==5.12.0
+flake8==6.0.0
+# jupyter
+jupytext @ git+https://github.com/mwouts/jupytext.git@edad0f3f822c4ad6c82d1a6ba5d76b6997dacb8d
+jupyterlab==3.6.1
+jupyter_contrib_nbextensions==0.7.0
+papermill==2.4.0
+pandoc==2.3
