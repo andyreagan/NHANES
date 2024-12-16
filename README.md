@@ -6,15 +6,34 @@ with utilities to process the accelerometer data.
 In addition to activity processing,
 there are utilities to process the demographic
 and bloodwork data into a format that works with the public lifescore API.
-For more details on that model,
+
+## Activity processing
+
+In `src/paxraw` we provide a central script to process the PAXRAW
+activity data files from the 2003-2006 NHANES cohorts.
+You can run the `main.ipynb` files by setting the year variable
+and running through.
+
+## Mortality file processing
+
+In `src/parse_lmf` there is a single script that handles the
+fixed-width `.dat` format of the mortality followup files.
+It writes out a parquet file.
+
+## Lifescore processing
+
+The code in `src/m3s_variables` focuses on formatting available NHANES data into the format
+required for the MassMutual Mortality Score,
+as made available publicly through myLifeScore.
+For more details on the model itself,
 see the writeup [here](https://f.hubspotusercontent40.net/hubfs/5627392/LifeScore%20Labs_Med360.pdf) [1].
 
 [1] Maier, M., Carlotto, H., Saperstein, S., Sanchez, F., Balogun, S., & Merritt, S. (2020). The Accuracy and Transparency of Underwriting with Artificial Intelligence to Transform the Life-Insurance Industry.
 
-## Lifescore API
+### Lifescore API
 
 There is a public API at https://api.lifescoremodels.com/general/mls360
-that serves the "myLifeScore" tool there.
+that serves the "myLifeScore" tool.
 An example is worth 1000 words:
 
 ```
