@@ -6,7 +6,6 @@ from typing import Optional, Union
 import altair as alt
 import numpy as np
 import pandas as pd
-from altair_saver import save
 
 from .constants import (
     FILE_MAPPING_PRE2005,
@@ -127,7 +126,7 @@ def plot_all_dists(df: pd.DataFrame, info: dict, output_path: Path) -> pd.DataFr
             )
         ).properties(width=WIDTH, height=HEIGHT)
         print(f"    Saving plot at {str(output_path / f'{var}.png')}.")
-        save(chart, str(output_path / f"{var}.png"), vega_cli_options=["-s 4"])
+        chart.save(str(output_path / f"{var}.png"), scale_factor=4)
 
 
 def test_process_variables():
@@ -262,10 +261,9 @@ def missingness_correlation(nhanes_m3s: pd.DataFrame, output_path: Path, suffix:
         .properties(width=WIDTH, height=HEIGHT)
     )
     print(f" • Saving plot at {str(output_path)}/missingness{suffix}.png.")
-    save(
-        chart.encode(color="value:Q") + chart.mark_text(fontSize=8).encode(text="value"),
+    (chart.encode(color="value:Q") + chart.mark_text(fontSize=8).encode(text="value")).save(
         str(output_path / f"missingness{suffix}.png"),
-        vega_cli_options=["-s 4"],
+        scale_factor=4,
     )
 
 
@@ -290,7 +288,7 @@ def missingness_diagnostics(d: pd.DataFrame, output_path: Path) -> None:
         .properties(width=WIDTH, height=HEIGHT)
     )
     print(f" •  Saving plot at {str(output_path / 'missingness_dist.png')}.")
-    save(chart, str(output_path / "missingness_dist.png"), vega_cli_options=["-s 4"])
+    chart.save(str(output_path / "missingness_dist.png"), scale_factor=4)
     chart = (
         alt.Chart(m.loc[:, ["missingness"]])
         .mark_bar()
@@ -298,7 +296,7 @@ def missingness_diagnostics(d: pd.DataFrame, output_path: Path) -> None:
         .properties(width=WIDTH, height=HEIGHT)
     )
     print(f" • Saving plot at {str(output_path / 'missingness_dist_2.png')}.")
-    save(chart, str(output_path / "missingness_dist_2.png"), vega_cli_options=["-s 4"])
+    chart.save(str(output_path / "missingness_dist_2.png"), scale_factor=4)
     chart = (
         alt.Chart(m.loc[:, ["index", "average_missingness"]])
         .mark_line()
@@ -306,7 +304,7 @@ def missingness_diagnostics(d: pd.DataFrame, output_path: Path) -> None:
         .properties(width=WIDTH, height=HEIGHT)
     )
     print(f" • Saving plot at {str(output_path / 'missingness_cum.png')}.")
-    save(chart, str(output_path / "missingness_cum.png"), vega_cli_options=["-s 4"])
+    chart.save(str(output_path / "missingness_cum.png"), scale_factor=4)
 
     m2 = (d.isna() * 1).loc[m.index, :]
     m2["index"] = np.arange(m2.shape[0])
@@ -318,7 +316,7 @@ def missingness_diagnostics(d: pd.DataFrame, output_path: Path) -> None:
         .properties(width=WIDTH, height=HEIGHT)
     )
     print(f" • Saving plot at {str(output_path / 'missingness_all.png')}.")
-    save(chart, str(output_path / "missingness_all.png"), vega_cli_options=["-s 4"])
+    chart.save(str(output_path / "missingness_all.png"), scale_factor=4)
 
     threshold_counts = pd.DataFrame(
         {
@@ -336,7 +334,7 @@ def missingness_diagnostics(d: pd.DataFrame, output_path: Path) -> None:
         .properties(width=WIDTH, height=HEIGHT)
     )
     print(f" • Saving plot at {str(output_path / 'missingness_thresh.png')}.")
-    save(chart, str(output_path / "missingness_thresh.png"), vega_cli_options=["-s 4"])
+    chart.save(str(output_path / "missingness_thresh.png"), scale_factor=4)
 
 
 def main(

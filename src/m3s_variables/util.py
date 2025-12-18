@@ -9,7 +9,7 @@ from pandas import isna, isnull
 pmin = min
 round = np_round
 # and use the ifelse ternary to avoid python specific ternary:
-ifelse = lambda boolable, iftrue, iffalse: [iffalse, iftrue][boolable]  # noqa: E731
+ifelse = lambda boolable, iftrue, iffalse: iftrue if boolable else iffalse  # noqa: E731
 
 
 def c(*args) -> list:
@@ -36,28 +36,33 @@ def mylambda(lstr: str, single: bool = False) -> Callable:
     """Create a function that accepts 1 argument, a list,
     and evaluates lstr as an expression with the argument as _."""
 
-    def lambdafun(_: list, eval_: bool = True, axis: Any = None) -> Any:
+    def lambdafun(_, eval_: bool = True, axis: Any = None) -> Any:
         """Evaluate the expr given in lstr with arguments _.
 
         Pass eval_=False to return the expression string.
         Accept axis kwarg as pd.Series.apply passthrough but doesn't use it."""
         if not eval_:
             return lstr
+        # Convert Series to numpy array for consistent integer indexing
+        # This avoids the FutureWarning about Series.__getitem__ with integer keys
+        if hasattr(_, "values") and hasattr(_, "iloc"):
+            _ = _.values
         return eval(lstr)
 
     return lambdafun
 
 
 def bounds_filter(bounds: list) -> Callable:
-    """Create a filter from a list of uppver and lower bound.
-    Includes both boundaries of the range as valid."""
+    """Create a filter from a list of upper and lower bound.
+    Includes both boundaries of the range as valid.
+    Returns False for None/NaN values."""
     assert len(bounds) == 2
     assert not (bounds[0] is None and bounds[1] is None)
     if bounds[0] is not None and bounds[1] is not None:
-        return lambda _: _ >= bounds[0] and _ <= bounds[1]
+        return lambda _: False if isnull(_) else (_ >= bounds[0] and _ <= bounds[1])
     elif bounds[0] is not None:
-        return lambda _: _ >= bounds[0]
+        return lambda _: False if isnull(_) else _ >= bounds[0]
     elif bounds[1] is not None:
-        return lambda _: _ <= bounds[1]
+        return lambda _: False if isnull(_) else _ <= bounds[1]
     # same as the final condition
-    return lambda _: _ <= bounds[1]
+    return lambda _: False if isnull(_) else _ <= bounds[1]

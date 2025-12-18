@@ -94,7 +94,7 @@ FILE_MAPPING_PRE2005: dict = {
     "SMQMEC": "SMQRTU",
     "KIQ_U": "L24PP",
     "ALB_CR": "L16",
-    "L11PSA": "PSA",
+    "PSA": "L11PSA",
 }
 VAR_MAPPING_PRE2005: dict = {
     "MCQ": {"MCQ300C": "MCQ250A", "MCQ300A": "MCQ250G"},
