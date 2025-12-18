@@ -33,18 +33,13 @@ data/raw/%.XPT :
 ################################################################################
 
 # Wildcard on the year, with the fixed suffixes
-data/raw/%/paxraw_c_met_worn_bouts_reliable.parquet: src/paxraw/main.ipynb
-	uv run --with papermill papermill $< $*-run.ipynb -p year $*
-	uv run --with jupyter jupyter nbconvert $< --to pdf
-data/raw/%/paxraw_d_met_worn_bouts_reliable.parquet: src/paxraw/main.ipynb
-	uv run --with papermill papermill $< $*-run.ipynb -p year $*
-	uv run --with jupyter jupyter nbconvert $< --to pdf
-
-# Simple versions,
-data/processed/%/PAXRAW_C_simple.parquet : src/paxraw/01_simple.py data/raw/%/paxraw_c.xpt
-	uv run $< $*
-data/processed/%/PAXRAW_D_simple.parquet : src/paxraw/01_simple.py data/raw/%/paxraw_d.xpt
-	uv run $< $*
+# Uses the split notebooks: 01_pipeline for data processing (production)
+# 02_algorithm_development for speed comparisons (dev only)
+# 03_analysis for visualizations (optional)
+data/processed/2003-2004/paxraw_c_met_worn_bouts_reliable.parquet: src/paxraw/01_pipeline.ipynb src/paxraw/utils.py
+	cd src/paxraw && uv run --extra paxraw --with papermill papermill 01_pipeline.ipynb /dev/stdout -p year 2003-2004 -k python3 > /dev/null
+data/processed/2005-2006/paxraw_d_met_worn_bouts_reliable.parquet: src/paxraw/01_pipeline.ipynb src/paxraw/utils.py
+	cd src/paxraw && uv run --extra paxraw --with papermill papermill 01_pipeline.ipynb /dev/stdout -p year 2005-2006 -k python3 > /dev/null
 
 ################################################################################
 # M3S covariates

@@ -9,10 +9,12 @@ and bloodwork data into a format that works with the public lifescore API.
 
 ## Activity processing
 
-In `src/paxraw` we provide a central script to process the PAXRAW
+In `src/paxraw` we provide a series of scripts to process the PAXRAW
 activity data files from the 2003-2006 NHANES cohorts.
-You can run the `main.ipynb` files by setting the year variable
+You can run the `01_pipeline.ipynb` files by setting the year variable
 and running through.
+The `03_analysis.ipynb` can also run for each year.
+Copies of the run notebooks are in the `output/paxraw` folder.
 
 ## Mortality file processing
 

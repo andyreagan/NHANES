@@ -1,6 +1,5 @@
 # any raw data
 data/
-output/
 
 # notebook saves
 .ipynb_checkpoints/
