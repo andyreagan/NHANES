@@ -18,3 +18,11 @@ data/
 # osx
 .DS_Store
 __pycache__
+output/
+
+# Python build artifacts
+*.egg-info/
+
+# Vendored R packages (install via CRAN)
+flexsurv/
+flexsurv_*.tar.gz

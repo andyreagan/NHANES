@@ -1,4 +1,4 @@
-from numpy import NaN
+from numpy import nan as NaN
 from pandas import isna
 
 from .util import c, coalesce, coalesce_while, ifelse, round

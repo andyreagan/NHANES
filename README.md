@@ -5,7 +5,8 @@ They focus on the 2003-2006 data that contains activity files,
 with utilities to process the accelerometer data.
 In addition to activity processing,
 there are utilities to process the demographic
-and bloodwork data into a format that works with the public lifescore API.
+and bloodwork data into a format that works with the public lifescore API,
+and to reproduce Levine et al. (2018) PhenoAge biological aging measure.
 
 ## Activity processing
 
@@ -15,6 +16,75 @@ You can run the `01_pipeline.ipynb` files by setting the year variable
 and running through.
 The `03_analysis.ipynb` can also run for each year.
 Copies of the run notebooks are in the `output/paxraw` folder.
+
+## PhenoAge (Biological Aging)
+
+The code in `src/phenoage/` reproduces Levine et al. (2018) [2] PhenoAge — a biological
+age estimate derived from 9 clinical chemistry biomarkers + chronological age.
+
+**Module structure:**
+
+```
+src/phenoage/
+├── constants.py              # All shared constants, coefficients, column definitions
+├── model.py                  # Gompertz PH model fitting & PhenoAge computation
+├── load_data.py              # NHANES III + IV data loading & harmonization
+├── run_phenoage.py           # Main pipeline (make phenoage)
+├── REPRODUCTION_NOTES.md     # Detailed findings from coefficient reproduction
+├── reproduction/             # Investigating Levine 2018 coefficient matching
+│   ├── explore_filters.py    #   Filter config iteration & Gompertz comparison
+│   ├── find_42.py            #   Search for completeness filter yielding n=9,926
+│   └── validate_models.py    #   Compare Levine/naive/winsorized on NHANES IV
+└── analysis/                 # Downstream model comparisons & response curves
+    ├── rsf_analysis.py       #   Random Survival Forest + SHAP + optimal profiles
+    ├── rsf_expanded.py       #   RSF with extended feature sets
+    ├── age_vs_survival.py    #   Age-prediction vs survival-prediction comparison
+    ├── tabpfn_analysis.py    #   TabPFN foundation model for mortality
+    ├── single_variable_curves.py  # Multi-model response curves (Gompertz/GAM/RSF/TabPFN)
+    ├── gam_analysis.R        #   GAM survival analysis (R mgcv)
+    └── rsf_r_comparison.R    #   RSF comparison (R ranger + randomForestSRC)
+```
+
+**Data coverage:**
+- **Training**: NHANES III (1988-1994) lab data (~15k complete cases) + linked mortality
+- **Validation/Scoring**: NHANES IV continuous (1999-2000 through 2017-2018, 10 cycles)
+  - PhenoAge requires CRP, which is unavailable in 2011-2014 cycles
+  - ~22,500 scored across 8 available cycles
+
+**Pipeline** (`uv run -m src.phenoage.run_phenoage` or `make phenoage`):
+1. Downloads NHANES III lab.dat (fixed-width) + all NHANES IV XPT files + linked mortality
+2. Harmonizes variable names and units across cycles (glucose→mmol/L, CRP→mg/dL)
+3. Fits a Gompertz proportional hazards model on NHANES III (10-year mortality)
+4. Compares fitted coefficients with Levine's published values
+5. Scores PhenoAge on all NHANES IV cycles using both fitted and published coefficients
+6. Saves results to `data/processed/phenoage/`
+
+**Reproduction** (`uv run -m src.phenoage.reproduction.explore_filters`):
+Iterates over configurable filter combinations (fasting threshold, outlier removal,
+mortality definition, CRP transform, etc.) and fits a Gompertz model on each,
+comparing all coefficients to Levine's published values.  Edit the `CONFIGS` list
+in `src/phenoage/reproduction/explore_filters.py` to try new combinations.  See
+[`src/phenoage/REPRODUCTION_NOTES.md`](src/phenoage/REPRODUCTION_NOTES.md) for
+detailed findings and [`research_agents/README.md`](research_agents/README.md) for
+the 16-agent parallel investigation log.
+
+**Biomarkers used** (9 + age):
+albumin (g/dL), creatinine (mg/dL), glucose (mmol/L), ln(CRP mg/dL),
+lymphocyte %, mean cell volume (fL), red cell distribution width (%),
+alkaline phosphatase (U/L), white blood cell count (10⁹/L), chronological age
+
+**Key results:**
+- PhenoAge–age correlation: 0.93-0.94 across validation cycles (matching Levine)
+- Mean PhenoAge acceleration: +2.7 to +3.6 years (1999-2010 cycles)
+- 2015+ cycles show ~+7 year acceleration due to RDW assay method change (known issue)
+- All model variants (Levine published, naive MLE, winsorized MLE) predict
+  mortality equivalently (C-index within 0.002, PhenoAge r > 0.99 pairwise)
+
+**Note on units:** The Levine 2018 coefficients expect glucose in mmol/L (not mg/dL)
+and ln(CRP) where CRP is in mg/dL. This was verified by confirming PhenoAge ≈ chronological
+age for individuals with population-median biomarker values.
+
+[2] Levine, M. E., Lu, A. T., Quach, A., et al. (2018). An epigenetic biomarker of aging for lifespan and healthspan. Aging, 10(4), 573-591.
 
 ## Mortality file processing
 

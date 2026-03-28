@@ -83,6 +83,143 @@ NHANES_VAR_FILES: dict = {
     # this gets created by the loading script
     "other": ["year"],
 }
+# =============================================================================
+# All NHANES IV (continuous) cycle definitions
+# (cycle_label, suffix_letter, start_year)
+# =============================================================================
+
+ALL_NHANES_IV_CYCLES: list[tuple[str, str, int]] = [
+    ("1999-2000", "", 1999),
+    ("2001-2002", "B", 2001),
+    ("2003-2004", "C", 2003),
+    ("2005-2006", "D", 2005),
+    ("2007-2008", "E", 2007),
+    ("2009-2010", "F", 2009),
+    ("2011-2012", "G", 2011),
+    ("2013-2014", "H", 2013),
+    ("2015-2016", "I", 2015),
+    ("2017-2018", "J", 2017),
+    # Pre-pandemic (combined 2017-March 2020) uses P_ prefix naming
+    # ("2017-2020", "P", 2017),
+    ("2021-2023", "L", 2021),
+]
+
+# =============================================================================
+# Per-cycle file name overrides
+# Maps: canonical_file_name -> {cycle: actual_base_name}
+# When a cycle isn't listed, the default "{canonical}_{suffix}" applies
+# (or just "{canonical}" for 1999-2000 which has no suffix).
+# =============================================================================
+
+FILE_NAME_OVERRIDES: dict[str, dict[str, str]] = {
+    "BIOPRO": {
+        "1999-2000": "LAB18",
+        "2001-2002": "L40",
+        "2003-2004": "L40",
+    },
+    "HEPC": {
+        "1999-2000": "LAB02",
+        "2001-2002": "L02",
+        "2003-2004": "L02",
+    },
+    "TCHOL": {
+        "1999-2000": "LAB13",
+        "2001-2002": "L13",
+        "2003-2004": "L13",
+    },
+    "HDL": {
+        "1999-2000": "LAB13",
+        "2001-2002": "L13",
+        "2003-2004": "L13",
+    },
+    "GHB": {
+        "1999-2000": "LAB10",
+        "2001-2002": "L10",
+        "2003-2004": "L10",
+    },
+    "HIV": {
+        "1999-2000": "LAB03",
+        "2001-2002": "L03",
+        "2003-2004": "L03",
+    },
+    "TRIGLY": {
+        "1999-2000": "LAB13AM",
+        "2001-2002": "L13AM",
+        "2003-2004": "L13AM",
+    },
+    "SMQRTU": {
+        "1999-2000": "SMQMEC",
+        "2001-2002": "SMQMEC",
+        "2003-2004": "SMQMEC",
+    },
+    "KIQ_U": {
+        "2003-2004": "L24PP",
+    },
+    "ALB_CR": {
+        "1999-2000": "LAB16",
+        "2001-2002": "L16",
+        "2003-2004": "L16",
+    },
+    "PSA": {
+        "1999-2000": "LAB11PSA",  # doesn't exist in 1999-2000, will be empty
+        "2001-2002": "L11PSA",
+        "2003-2004": "L11PSA",
+    },
+    # Blood pressure: 2017-2018 onwards uses oscillometric protocol (BPXO)
+    # with different variable names (BPXOSY1 vs BPXSY1, etc.)
+    "BPX": {
+        "2021-2023": "BPXO",
+    },
+}
+
+# =============================================================================
+# Per-cycle variable name mappings
+# Maps: canonical_file_name -> {cycle: {canonical_var: alternate_var}}
+# When a variable isn't present under its canonical name, we look for the
+# alternate name and rename it.
+# =============================================================================
+
+VAR_NAME_OVERRIDES: dict[str, dict[str, dict[str, str]]] = {
+    "MCQ": {
+        # Before 2005, "family told you had diabetes" and "family told you had heart attack"
+        # used different question numbers
+        "1999-2000": {"MCQ300C": "MCQ250A", "MCQ300A": "MCQ250G"},
+        "2001-2002": {"MCQ300C": "MCQ250A", "MCQ300A": "MCQ250G"},
+        "2003-2004": {"MCQ300C": "MCQ250A", "MCQ300A": "MCQ250G"},
+    },
+    "HDL": {
+        "1999-2000": {"LBDHDD": "LBXHDD"},
+        "2001-2002": {"LBDHDD": "LBXHDD"},
+        "2003-2004": {"LBDHDD": "LBXHDD"},
+    },
+    "DUQ": {
+        "1999-2000": {"DUQ240": "DUQ100"},
+        "2001-2002": {"DUQ240": "DUQ100"},
+        "2003-2004": {"DUQ240": "DUQ100"},
+    },
+    "BPX": {
+        # In 2017-2020 and 2021-2023, BP measured with oscillometric protocol.
+        # Variable names change: BPXSY1→BPXOSY1, BPXDI1→BPXODI1, etc.
+        # Only 3 readings (not 4), and pulse is BPXOPLS.
+        "2021-2023": {
+            **{f"BPXSY{i+1}": f"BPXOSY{i+1}" for i in range(3)},
+            **{f"BPXDI{i+1}": f"BPXODI{i+1}" for i in range(3)},
+            "BPXPLS": "BPXOPLS",
+        },
+    },
+    "BIOPRO": {
+        # 2001-2002 uses LBD prefix for some BIOPRO vars
+        "2001-2002": {
+            "LBXSCR": "LBDSCR",
+            "LBXSAPSI": "LBDSAPSI",
+        },
+    },
+}
+
+# =============================================================================
+# Legacy aliases (kept for backward compatibility — old code may reference these)
+# =============================================================================
+
 FILE_MAPPING_PRE2005: dict = {
     "BIOPRO": "L40",
     "HEPC": "L02",
@@ -103,6 +240,48 @@ VAR_MAPPING_PRE2005: dict = {
     # "DIQ": {"DIQ280": "LBXGH"},
 }
 
+
+def resolve_file_name(canonical: str, cycle: str, suffix: str) -> str:
+    """Resolve the actual XPT file name for a canonical file in a given cycle.
+
+    Handles the three naming conventions:
+      - 1999-2000: no suffix (e.g., "DEMO.XPT")
+      - 2001-2018 + 2021-2023: suffix letter (e.g., "DEMO_B.XPT")
+      - 2017-2020 pre-pandemic: P_ prefix (e.g., "P_DEMO.XPT")
+
+    Args:
+        canonical: Canonical file name (e.g., "BIOPRO", "DEMO")
+        cycle: Cycle label (e.g., "2003-2004", "2017-2020")
+        suffix: Suffix letter (e.g., "C", "P" for pre-pandemic, "" for 1999-2000)
+
+    Returns:
+        Full file name like "BIOPRO_D" or "LAB18" or "P_BIOPRO" (without .XPT)
+    """
+    # Check for explicit override
+    overrides = FILE_NAME_OVERRIDES.get(canonical, {})
+    base = overrides.get(cycle, canonical)
+
+    # Apply naming convention
+    if suffix == "P":
+        # Pre-pandemic 2017-2020: P_ prefix
+        return f"P_{base}"
+    elif suffix:
+        return f"{base}_{suffix}"
+    else:
+        # 1999-2000: no suffix
+        return base
+
+
+def resolve_var_mapping(canonical_file: str, cycle: str) -> dict[str, str]:
+    """Get variable name mappings for a specific file and cycle.
+
+    Returns:
+        Dict mapping canonical_var_name -> alternate_var_name found in the file.
+    """
+    file_overrides = VAR_NAME_OVERRIDES.get(canonical_file, {})
+    return file_overrides.get(cycle, {})
+
+
 # for imputing,
 # - we impute all predictors that are not "required" (if required and NA, we'd drop that row)
 # - we also go ahead and impute things that have impute=True
@@ -120,7 +299,7 @@ LOOKUP: dict = {
     "age_5_ex": {"depends_on": ["RIDAGEEX"], "expr": "5 * round(_ / 12 / 5)"},
     "age": {
         "depends_on": ["RIDAGEEX", "RIDAGEMN", "RIDAGEYR"],
-        "expr": "coalesce(_[0] / 12, _[1] / 12, _[2])",
+        "expr": "coalesce(safe_div(_[0], 12), safe_div(_[1], 12), _[2])",
         "na_if_dependency_na": "all",
     },
     "age_5": {

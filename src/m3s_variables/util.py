@@ -12,6 +12,20 @@ round = np_round
 ifelse = lambda boolable, iftrue, iffalse: iftrue if boolable else iffalse  # noqa: E731
 
 
+def safe_div(val: Any, divisor: float) -> Any:
+    """None/NaN-safe division. Returns None for None, NaN for NaN."""
+    if val is None:
+        return None
+    return val / divisor
+
+
+def safe_mul(val: Any, multiplier: float) -> Any:
+    """None/NaN-safe multiplication. Returns None for None, NaN for NaN."""
+    if val is None:
+        return None
+    return val * multiplier
+
+
 def c(*args) -> list:
     """Behaves like R's c() function"""
     return list(args)
@@ -47,7 +61,11 @@ def mylambda(lstr: str, single: bool = False) -> Callable:
         # This avoids the FutureWarning about Series.__getitem__ with integer keys
         if hasattr(_, "values") and hasattr(_, "iloc"):
             _ = _.values
-        return eval(lstr)
+        try:
+            return eval(lstr)
+        except TypeError:
+            # Comparison with None/NaN (e.g., None <= 66666) — treat as NA
+            return None
 
     return lambdafun
 

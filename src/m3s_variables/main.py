@@ -12,9 +12,12 @@ from .constants import (
     LOOKUP,
     NHANES_VAR_FILES,
     VAR_MAPPING_PRE2005,
+    VAR_NAME_OVERRIDES,
     keep,
     predictors,
     required,
+    resolve_file_name,
+    resolve_var_mapping,
 )
 from .util import bounds_filter, mylambda
 
@@ -22,19 +25,36 @@ WIDTH = 300
 HEIGHT = 300
 
 
+def _resolve_xpt_path(filename: Path) -> Path | None:
+    """Find the actual path for an XPT file, trying both .XPT and .xpt."""
+    alt = filename.with_suffix(filename.suffix.swapcase())
+    for candidate in [filename, alt]:
+        if candidate.exists() and candidate.stat().st_size >= 100:
+            return candidate
+    return None
+
+
 def make_file(filename: Path) -> bool:
-    if not filename.exists():
-        filename.parent.mkdir(parents=True, exist_ok=True)
-        run(["make", filename])
-    # return filename.exists()
-    # instead, we'll check that the file has a certian size
-    if filename.exists():
-        if filename.stat().st_size < 100:
-            return False
-        else:
-            return True
-    else:
-        return False
+    # Try both .XPT and .xpt extensions
+    if _resolve_xpt_path(filename) is not None:
+        return True
+    # Delete 0-byte files so make won't think the target already exists
+    alt = filename.with_suffix(filename.suffix.swapcase())
+    for candidate in [filename, alt]:
+        if candidate.exists() and candidate.stat().st_size < 100:
+            candidate.unlink()
+    # File doesn't exist — try to download via make
+    filename.parent.mkdir(parents=True, exist_ok=True)
+    run(["make", filename])
+    return _resolve_xpt_path(filename) is not None
+
+
+def read_sas_xpt(filename: Path) -> pd.DataFrame:
+    """Read a SAS XPT file, handling case-insensitive extensions."""
+    resolved = _resolve_xpt_path(filename)
+    if resolved is None:
+        raise FileNotFoundError(f"Could not find {filename} (tried both .XPT and .xpt)")
+    return pd.read_sas(resolved)
 
 
 def load_NHANES_files(
@@ -44,7 +64,20 @@ def load_NHANES_files(
     file_lookup: dict,
     file_mapping: dict,
     var_mapping: dict,
+    cycles: list[str] | None = None,
 ) -> pd.DataFrame:
+    """Load and merge all NHANES XPT files for the requested variables.
+
+    Supports all NHANES IV naming conventions:
+      - 1999-2000: no suffix (e.g., "DEMO.XPT")
+      - 2001-2018 + 2021-2023: suffix letter (e.g., "DEMO_B.XPT")
+      - 2017-2020 pre-pandemic: P_ prefix (e.g., "P_DEMO.XPT")
+
+    When ``cycles`` is provided, uses the new cycle-aware file and variable
+    name resolution from ``resolve_file_name()`` / ``resolve_var_mapping()``.
+    When ``cycles`` is None, falls back to the legacy suffix-based resolution
+    for backward compatibility.
+    """
     df_copy = base_df.copy()
 
     file: str
@@ -54,49 +87,64 @@ def load_NHANES_files(
         if file in {"DEMO", "mortality", "other"}:
             continue
         var_files: list = []
-        for base_path, suffix in zip(base_paths, suffixes):
-            filename: Path = base_path / f"{file}_{suffix}.XPT"
-            filename_pre2005: Path
+        for idx, (base_path, suffix) in enumerate(zip(base_paths, suffixes)):
+            cycle = cycles[idx] if cycles is not None else None
+
+            # --- Resolve the actual XPT file name ---
+            if cycle is not None:
+                resolved_name = resolve_file_name(file, cycle, suffix)
+                filename: Path = base_path / f"{resolved_name}.XPT"
+            else:
+                filename = base_path / f"{file}_{suffix}.XPT"
+
             print(f"Loading {filename}")
             df: pd.DataFrame
             if make_file(filename):
-                df = pd.read_sas(filename)
-            elif (file in file_mapping) and make_file(
-                base_path / f"{file_mapping[file]}_{suffix}.XPT"
-            ):
-                filename_pre2005 = base_path / f"{file_mapping[file]}_{suffix}.XPT"
-                print(
-                    f" • Was missing {filename}, found and loading pre-2005 file {filename_pre2005} instead."
-                )
-                df = pd.read_sas(filename_pre2005)
-            elif file in file_mapping:
-                filename_pre2005 = base_path / f"{file_mapping[file]}_{suffix}.XPT"
-                print(f" • ⚠ Missing both {filename} and {filename_pre2005} ⚠ ")
-                # create an empty df:
-                df = pd.DataFrame([{"SEQN": 0} | {x: 0 for x in vars}]).iloc[:0, :]
-                assert df.shape[0] == 0
+                df = read_sas_xpt(filename)
+            elif cycle is None:
+                # Legacy fallback: try FILE_MAPPING_PRE2005
+                if (file in file_mapping) and make_file(
+                    base_path / f"{file_mapping[file]}_{suffix}.XPT"
+                ):
+                    filename_pre2005 = base_path / f"{file_mapping[file]}_{suffix}.XPT"
+                    print(
+                        f" • Was missing {filename}, found and loading pre-2005 file {filename_pre2005} instead."
+                    )
+                    df = read_sas_xpt(filename_pre2005)
+                elif file in file_mapping:
+                    filename_pre2005 = base_path / f"{file_mapping[file]}_{suffix}.XPT"
+                    print(f" • ⚠ Missing both {filename} and {filename_pre2005} ⚠ ")
+                    df = pd.DataFrame([{"SEQN": 0} | {x: 0 for x in vars}]).iloc[:0, :]
+                    assert df.shape[0] == 0
+                else:
+                    print(f" • ⚠ Missing {filename}, no alternate ⚠ ")
+                    df = pd.DataFrame([{"SEQN": 0} | {x: 0 for x in vars}]).iloc[:0, :]
+                    assert df.shape[0] == 0
             else:
-                print(f" • ⚠ Missing {filename}, no alternate ⚠ ")
-                # create an empty df:
+                print(f" • ⚠ Missing {filename} (cycle={cycle}) ⚠ ")
                 df = pd.DataFrame([{"SEQN": 0} | {x: 0 for x in vars}]).iloc[:0, :]
                 assert df.shape[0] == 0
 
             print(f" • Row count from this file is: {df.shape[0]:,d}")
             # make sure it's unique
             assert df.shape[0] == df.SEQN.unique().shape[0]
-            # find missing cols from other files
+
+            # --- Apply variable name mappings ---
+            if cycle is not None:
+                cycle_var_map = resolve_var_mapping(file, cycle)
+            else:
+                cycle_var_map = var_mapping.get(file, {})
+
             for col in set(vars) - set(df.columns):
                 print(f" • Looking for missing {col=}")
-                # see if file has mapped vars
-                if file in var_mapping:
-                    # see if the col is in those mapped vars
-                    if col in var_mapping[file]:
-                        print(f" • Found a mapped version for {col=} as {var_mapping[file][col]=}")
-                        # see if we have a mapping file
-                        # if file in file_mapping:
-                        # we should have already loaded that version
-                        assert var_mapping[file][col] in df.columns
-                        df[col] = df[var_mapping[file][col]]
+                if col in cycle_var_map:
+                    alt_name = cycle_var_map[col]
+                    print(f" • Found a mapped version for {col=} as {alt_name=}")
+                    if alt_name in df.columns:
+                        df[col] = df[alt_name]
+                    else:
+                        print(f" • ⚠ Mapped variable {alt_name} also not found in file ⚠")
+
             missing_cols: set = set(vars) - set(df.columns)
             has_cols: set = set(df.columns) & set(vars)
             if len(missing_cols) > 0:
@@ -162,8 +210,9 @@ def process_variables(df: pd.DataFrame, all_info: dict) -> pd.DataFrame:
         print(f"Creating {var=}.")
         missing_cols = set(info["depends_on"]) - set(df_copy.columns)
         if missing_cols:
-            print(missing_cols)
-        assert len(missing_cols) == 0
+            print(f" • Missing dependency columns {missing_cols} — filling with NA")
+            for col in missing_cols:
+                df_copy[col] = None
         if "expr" in info:
             print(f' • Applying function(_) {{ {info["expr"]} }} to input variable list _.')
             if len(info["depends_on"]) > 1:
@@ -344,28 +393,50 @@ def main(
     plot_dists: bool = False,
     plot_missingness_diagnostics: bool = False,
     save_unfiltered_fname: Union[None, str] = None,
+    mortality_path: Union[None, str, Path] = None,
+    cycles: list[str] | None = None,
 ) -> pd.DataFrame:
     # initialize our wide DF with the demographics:
     output_path.mkdir(parents=True, exist_ok=True)
-    bases: list[pd.DataFrame] = [
-        pd.read_sas(base_path / f"DEMO_{suffix}.XPT")
-        for base_path, suffix in zip(base_paths, suffixes)
-        if make_file(base_path / f"DEMO_{suffix}.XPT")
-    ]
-    # for i, base_path in enumerate(base_paths):
-    #     bases[i]["year"] = int(base_path.name.split("-")[0])
+    bases: list[pd.DataFrame] = []
+    for idx, (base_path, suffix) in enumerate(zip(base_paths, suffixes)):
+        cycle = cycles[idx] if cycles is not None else None
+        if cycle is not None:
+            demo_name = resolve_file_name("DEMO", cycle, suffix)
+        else:
+            demo_name = f"DEMO_{suffix}"
+        demo_path = base_path / f"{demo_name}.XPT"
+        if make_file(demo_path):
+            bases.append(read_sas_xpt(demo_path))
+        else:
+            print(f"⚠ Could not load DEMO for {base_path} ({demo_path})")
+
     all_nhanes: pd.DataFrame = pd.concat(
-        # [base.loc[:, ["SEQN", "year"] + NHANES_VAR_FILES["DEMO"]] for base in bases]
-        [base.loc[:, ["SEQN"] + NHANES_VAR_FILES["DEMO"]] for base in bases]
+        [
+            base.loc[:, ["SEQN"] + [c for c in NHANES_VAR_FILES["DEMO"] if c in base.columns]]
+            for base in bases
+        ]
     )
     print(f"Row count from demographic file is {all_nhanes.shape[0]:,d}")
-    mortality: pd.DataFrame = pd.read_parquet(
-        "data/processed/LMF_Files/LMF__2003-2004__2005-2006__MORT_2019.parquet"
-    )
+    if mortality_path is None:
+        mortality_path = "data/processed/LMF_Files/LMF_all_MORT_2019.parquet"
+    mortality: pd.DataFrame = pd.read_parquet(mortality_path)
     print(f"Row count from mortality file is {mortality.shape[0]:,d}")
+    # Filter mortality to only the cycles we're processing to avoid SEQN
+    # collisions (NHANES III SEQNs overlap with NHANES IV 1999-2000+)
+    if "cycle" in mortality.columns:
+        if cycles is not None:
+            mortality = mortality[mortality.cycle.isin(cycles)].copy()
+            print(f"Filtered mortality to cycles {cycles}: {mortality.shape[0]:,d} rows")
+        else:
+            # Legacy mode: exclude NHANES_III to avoid SEQN collisions with NHANES IV
+            mortality = mortality[mortality.cycle != "NHANES_III"].copy()
+            print(f"Filtered out NHANES_III from mortality: {mortality.shape[0]:,d} rows")
     print(all_nhanes.head())
     print(mortality.head())
-    all_nhanes = all_nhanes.merge(mortality, on=["SEQN"], how="left")
+    # Drop the 'cycle' and 'year' columns from mortality to avoid conflicts
+    mort_merge_cols = [c for c in mortality.columns if c not in ("cycle", "year")]
+    all_nhanes = all_nhanes.merge(mortality[mort_merge_cols], on=["SEQN"], how="left")
     print(f"Row count from demographic file with mortality is {all_nhanes.shape[0]:,d}")
 
     all_nhanes = load_NHANES_files(
@@ -375,6 +446,7 @@ def main(
         NHANES_VAR_FILES,
         FILE_MAPPING_PRE2005,
         VAR_MAPPING_PRE2005,
+        cycles=cycles,
     )
 
     print("=" * 80)
@@ -410,6 +482,8 @@ def main(
 
     def print_fwp(num, denom):
         """Print Fraction With Percentage"""
+        if denom == 0:
+            return f"{int(num):,d}/{int(denom):,d} (N/A)"
         return f"{int(num):,d}/{int(denom):,d} ({num/denom*100:.0f}%)"
 
     n_total = all_nhanes.shape[0]
@@ -457,6 +531,98 @@ def main(
 
     thresh: int = 40
     all_nhanes_req_thresh: pd.DataFrame = all_nhanes_req.dropna(subset=predictors, thresh=thresh)
+    n_total = n_remaining
+    n_remaining = all_nhanes_req_thresh.shape[0]
+    n_lost = n_total - n_remaining
+    n_deaths = n_deaths_remaining
+    n_deaths_remaining = all_nhanes_req_thresh.is_dead.sum()
+    print(
+        f"""After setting threshold of {thresh} vars, lost {print_fwp(n_lost, n_total)} particpants with {print_fwp(n_remaining, n_total)} paricipants remain with {print_fwp(n_deaths_remaining, n_deaths)} deaths."""
+    )
+
+    print("=" * 80)
+    print("Done.")
+
+    return all_nhanes_req_thresh
+
+
+def main_nhanes_iii(
+    output_path: Path,
+    plot_dists: bool = False,
+    plot_missingness_diagnostics: bool = False,
+    save_unfiltered_fname: Union[None, str] = None,
+    mortality_path: Union[None, str, Path] = None,
+) -> pd.DataFrame:
+    """Run the M3S pipeline on NHANES III data.
+
+    NHANES III uses fixed-width .dat files instead of .XPT, so it needs
+    a separate loader. The variable processing and filtering is identical
+    to NHANES IV — we just skip the load_NHANES_files step since the
+    nhanes_iii module already produces a DataFrame with NHANES IV column names.
+    """
+    from .nhanes_iii import load_nhanes_iii_for_m3s
+
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Load NHANES III data with NHANES IV-compatible column names
+    all_nhanes = load_nhanes_iii_for_m3s()
+    print(f"Row count from NHANES III is {all_nhanes.shape[0]:,d}")
+
+    # Load and merge mortality
+    if mortality_path is None:
+        mortality_path = "data/processed/LMF_Files/LMF_all_MORT_2019.parquet"
+    mortality: pd.DataFrame = pd.read_parquet(mortality_path)
+    if "cycle" in mortality.columns:
+        mortality = mortality[mortality.cycle == "NHANES_III"].copy()
+        print(f"Filtered mortality to NHANES_III: {mortality.shape[0]:,d} rows")
+    mort_merge_cols = [c for c in mortality.columns if c not in ("cycle", "year")]
+    all_nhanes = all_nhanes.merge(mortality[mort_merge_cols], on=["SEQN"], how="left")
+    print(f"Row count after mortality merge is {all_nhanes.shape[0]:,d}")
+
+    # Process variables (same pipeline as NHANES IV)
+    print("=" * 80)
+    print("Creating variables.")
+    print("-" * 80)
+    all_nhanes = process_variables(all_nhanes, LOOKUP)
+
+    if save_unfiltered_fname is not None:
+        all_nhanes.to_parquet(save_unfiltered_fname)
+
+    if plot_dists:
+        plot_all_dists(all_nhanes, LOOKUP, output_path)
+
+    # Filter and impute (same logic as main())
+    def print_fwp(num, denom):
+        if denom == 0:
+            return f"{int(num):,d}/{int(denom):,d} (N/A)"
+        return f"{int(num):,d}/{int(denom):,d} ({num/denom*100:.0f}%)"
+
+    n_total = all_nhanes.shape[0]
+    n_lost = (~(all_nhanes.in_death_file == 1)).sum()
+    n_remaining = (all_nhanes.in_death_file == 1).sum()
+    n_deaths = all_nhanes.is_dead.sum()
+    n_deaths_remaining = all_nhanes.loc[all_nhanes.in_death_file == 1, "is_dead"].sum()
+    print(
+        f"""Missing followup on {print_fwp(n_lost, n_total)} paricipants, {print_fwp(n_remaining, n_total)} remaining with {print_fwp(n_deaths_remaining, n_deaths)} deaths."""
+    )
+
+    all_nhanes_req = (
+        all_nhanes.loc[all_nhanes.in_death_file == 1, :].dropna(subset=required, how="any").copy()
+    )
+    n_total = n_remaining
+    n_remaining = all_nhanes_req.shape[0]
+    n_lost = n_total - n_remaining
+    n_deaths_remaining = all_nhanes_req.is_dead.sum()
+    print(
+        f"""After filtering for all required vars, lost {print_fwp(n_lost, n_total)} particpants with {print_fwp(n_remaining, n_total)} paricipants remain with {print_fwp(n_deaths_remaining, n_deaths)} deaths."""
+    )
+
+    print("=" * 80)
+    print("Imputing.")
+    all_nhanes_req = impute_defaults(all_nhanes_req, LOOKUP)
+
+    thresh: int = 40
+    all_nhanes_req_thresh = all_nhanes_req.dropna(subset=predictors, thresh=thresh)
     n_total = n_remaining
     n_remaining = all_nhanes_req_thresh.shape[0]
     n_lost = n_total - n_remaining
