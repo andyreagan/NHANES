@@ -1,7 +1,7 @@
 [project]
 name = "nhanes"
 version = "0.1.0"
-description = "Add your description here"
+description = "NHANES data processing: accelerometry, LifeScore mortality scoring, and PhenoAge biological aging"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
